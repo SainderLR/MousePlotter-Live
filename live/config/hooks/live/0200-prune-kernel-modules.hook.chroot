@@ -1,0 +1,26 @@
+#!/bin/sh
+# Remove kernel modules for hardware and features this system never uses.
+# Debian ships modules xz-compressed, so each one removed saves its full size
+# in the image. live-build regenerates the initrd after the hooks run, so it
+# shrinks too.
+set -e
+
+for kdir in /usr/lib/modules/*; do
+	k=$kdir/kernel
+	# GPU drivers (never loaded: nomodeset), cameras and TV tuners, sound
+	# card drivers (sound/core stays for the laptop drivers that use it),
+	# InfiniBand, sensors (IIO), ISDN, RAID and device mapper, CAN bus,
+	# staging drivers.
+	rm -rf "$k"/drivers/gpu/drm/amd "$k"/drivers/gpu/drm/radeon \
+		"$k"/drivers/gpu/drm/nouveau "$k"/drivers/gpu/drm/i915 \
+		"$k"/drivers/gpu/drm/xe "$k"/drivers/media "$k"/sound/pci \
+		"$k"/sound/soc "$k"/drivers/infiniband "$k"/drivers/iio \
+		"$k"/drivers/isdn "$k"/drivers/md "$k"/drivers/net/can \
+		"$k"/drivers/staging
+	# Filesystems beyond ext4, FAT, exFAT, NTFS, ISO 9660, UDF and FUSE.
+	rm -rf "$k"/fs/btrfs "$k"/fs/xfs "$k"/fs/bcachefs "$k"/fs/ocfs2 \
+		"$k"/fs/gfs2 "$k"/fs/dlm "$k"/fs/nfs "$k"/fs/nfsd "$k"/fs/smb \
+		"$k"/fs/ceph "$k"/fs/f2fs "$k"/fs/jfs "$k"/fs/nilfs2 \
+		"$k"/fs/ubifs "$k"/fs/orangefs "$k"/fs/afs "$k"/fs/9p "$k"/fs/coda
+	depmod "${kdir##*/}"
+done

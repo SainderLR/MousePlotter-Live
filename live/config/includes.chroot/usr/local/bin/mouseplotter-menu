@@ -1,0 +1,144 @@
+#!/bin/bash
+# MousePlotter Live main menu, started on tty1 after the automatic login.
+set -u
+
+results=$HOME/results
+mkdir -p "$results"
+cd "$results" || exit 1
+
+pause() {
+	read -rsn1 -p "Press any key to return to the menu."
+	echo
+}
+
+network_up() {
+	systemctl is-active -q NetworkManager
+}
+
+network_status() {
+	if network_up; then
+		echo "on, $(nmcli -t -f STATE general 2>/dev/null)"
+	else
+		echo "off"
+	fi
+}
+
+network_on() {
+	clear
+	sudo systemctl start NetworkManager
+	sudo nmcli radio all on 2>/dev/null
+	sudo nmcli networking on
+	if nmcli -t -f TYPE device 2>/dev/null | grep -qx wifi; then
+		# nmtui lists only networks already found, so give the first scan of
+		# the just switched on Wi-Fi device up to 10 seconds to find some.
+		echo "Scanning for Wi-Fi networks..."
+		local i
+		for i in $(seq 20); do
+			[ -n "$(nmcli -t -f SSID device wifi list --rescan no 2>/dev/null)" ] && break
+			sleep 0.5
+		done
+		sudo nmtui connect
+	else
+		echo "No Wi-Fi device found. Ethernet and USB tethering connect automatically."
+		pause
+	fi
+}
+
+# Take every interface down and switch radios off, so no network interrupts
+# or Wi-Fi scans run during a recording.
+network_off() {
+	if network_up; then
+		sudo nmcli networking off
+		sudo nmcli radio all off
+		sudo systemctl stop NetworkManager wpa_supplicant
+	fi
+	local dev
+	for dev in /sys/class/net/*; do
+		[ "${dev##*/}" = lo ] || sudo ip link set "${dev##*/}" down
+	done
+}
+
+record() {
+	clear
+	if network_up; then
+		echo "Note: the network is on. Wi-Fi and Ethernet interrupts can show up as"
+		echo "timing jitter; turn the network off from the menu (O) for the cleanest data."
+		echo
+	fi
+	# MOUSEPLOTTER_NO_PM_QOS keeps the CLI from overriding the idle states
+	# chosen with T. Keep the output on screen only if the CLI failed (e.g. no
+	# mouse found).
+	sudo MOUSEPLOTTER_NO_PM_QOS=1 /usr/local/bin/mouseplotter || pause
+}
+
+keyboard() {
+	clear
+	local XKBLAYOUT= XKBVARIANT= layout variant
+	. /etc/default/keyboard
+	echo "Current keyboard layout: ${XKBLAYOUT:-us} ${XKBVARIANT}"
+	echo
+	echo "Enter a layout code, optionally followed by a variant, for example:"
+	echo "  us   gb   de   fr   es   it   se   no   dk   pl   ru   jp   us dvorak"
+	echo
+	read -rp "Layout (empty to cancel): " layout variant
+	[ -n "$layout" ] || return
+	if [[ ! $layout =~ ^[a-z]+$ || ! $variant =~ ^[a-z0-9_-]*$ ]] ||
+		[ ! -e "/usr/share/X11/xkb/symbols/$layout" ]; then
+		echo "Unknown layout: $layout"
+		pause
+		return
+	fi
+	sudo sed -i -e "s/^XKBLAYOUT=.*/XKBLAYOUT=\"$layout\"/" \
+		-e "s/^XKBVARIANT=.*/XKBVARIANT=\"$variant\"/" /etc/default/keyboard
+	sudo setupcon -k --force
+	# X reads the layout from udev properties imported from /etc/default/keyboard.
+	sudo udevadm trigger --subsystem-match=input --action=change
+}
+
+# With toram, live-boot copies the system to RAM (a tmpfs at the medium's
+# mount point) and releases the USB drive.
+boot_drive_status() {
+	if [ "$(findmnt -no FSTYPE /run/live/medium)" = tmpfs ]; then
+		echo "not in use, can be removed"
+	else
+		echo "in use, keep it plugged in"
+	fi
+}
+
+shell() {
+	clear
+	echo "Type 'exit' to return to the menu. sudo needs no password."
+	bash
+}
+
+while true; do
+	clear
+	count=$(find "$results" -maxdepth 1 -type f | wc -l)
+	cat <<EOF
+
+  MousePlotter Live
+
+  CPU       $(/usr/local/sbin/mouseplotter-tune status)
+  Network   $(network_status)
+  Results   ~/results, $count file(s), kept in RAM: lost at power off
+  USB drive $(boot_drive_status)
+
+  R  Record mouse data           H  Web browser, results
+  N  Network on / Wi-Fi setup    O  Network off
+  T  Next idle-state level       K  Keyboard layout
+  S  Shell                       P  Power off        B  Reboot
+
+EOF
+	read -rsn1 key
+	case "$key" in
+	r | R) record ;;
+	h | H) xdg-open "$results/" ;;
+	n | N) network_on ;;
+	o | O) network_off ;;
+	t | T) sudo /usr/local/sbin/mouseplotter-tune next ;;
+	k | K) keyboard ;;
+	s | S) shell ;;
+	p | P) sudo systemctl poweroff ;;
+	b | B) sudo systemctl reboot ;;
+	esac
+done

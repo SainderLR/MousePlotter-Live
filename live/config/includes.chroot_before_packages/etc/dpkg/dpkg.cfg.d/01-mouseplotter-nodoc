@@ -1,0 +1,9 @@
+# Keep documentation, manuals and translations out of the image, but keep
+# the copyright files, which carry the licenses.
+path-exclude=/usr/share/doc/*
+path-include=/usr/share/doc/*/copyright
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/lintian/*
+path-exclude=/usr/share/locale/*
+path-include=/usr/share/locale/locale.alias

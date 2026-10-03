@@ -1,0 +1,8 @@
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="guess"
+# The console runs at the display's native resolution (video=efifb:auto),
+# where 8x16 text is tiny.
+FONTFACE="Terminus"
+FONTSIZE="16x32"
+VIDEOMODE=

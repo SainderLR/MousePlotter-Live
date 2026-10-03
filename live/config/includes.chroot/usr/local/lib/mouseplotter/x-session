@@ -1,0 +1,5 @@
+#!/bin/sh
+# X session for the report viewer: a window manager that keeps windows
+# fullscreen and undecorated, and Chromium. X exits when Chromium does.
+matchbox-window-manager -use_titlebar no &
+exec chromium "$@"

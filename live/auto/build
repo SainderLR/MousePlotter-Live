@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+# 1 MiB squashfs blocks and xz's x86 branch filter make the image about 40 MB
+# smaller than live-build's default of 128 KiB blocks. config/rootfs/excludes
+# keeps the kernel and initrd, which the ISO already carries next to the
+# squashfs, out of it.
+export MKSQUASHFS_OPTIONS="-b 1M -Xbcj x86"
+
+lb build noauto "${@}"

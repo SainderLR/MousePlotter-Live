@@ -1,0 +1,37 @@
+# Live system. Recommended packages aren't installed, so the ones needed are
+# listed here.
+live-boot
+live-config
+systemd-sysv
+sudo
+user-setup
+console-setup
+iproute2
+procps
+psmisc
+# initramfs-tools compresses the initrd with zstd if available, else gzip.
+zstd
+usbutils
+# Lets live-boot show progress while it copies the system to RAM.
+rsync
+
+# Report viewer and browser: X on the firmware framebuffer (no GPU driver),
+# Chromium (WebHID, for mouse makers' web-based configuration tools).
+xserver-xorg-core
+xserver-xorg-video-fbdev
+xserver-xorg-input-libinput
+xserver-xorg-legacy
+xinit
+matchbox-window-manager
+chromium
+fonts-dejavu-core
+
+# Network, off until turned on from the menu.
+network-manager
+wpasupplicant
+wireless-regdb
+firmware-iwlwifi
+firmware-mediatek
+firmware-realtek
+firmware-atheros
+firmware-brcm80211

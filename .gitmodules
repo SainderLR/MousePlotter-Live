@@ -1,0 +1,3 @@
+[submodule "MousePlotter"]
+	path = MousePlotter
+	url = https://github.com/XBAB-Tech/MousePlotter.git

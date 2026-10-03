@@ -1,0 +1,3 @@
+# Give the logged-in user access to HID devices, so Chromium's WebHID works:
+# many mice are configured through their maker's WebHID-based web page.
+SUBSYSTEM=="hidraw", TAG+="uaccess"

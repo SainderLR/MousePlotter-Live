@@ -1,0 +1,25 @@
+#!/bin/sh
+# MousePlotter Live's xdg-open: shows files and URLs in Chromium. There is no
+# desktop, so this starts X on the current console for as long as Chromium
+# runs, and closing Chromium returns to the console. With X already running,
+# the file opens in a new tab instead.
+set -u
+
+# Chromium can't learn the screen's physical size from the firmware
+# framebuffer, so scale by its height (ultrawides stay at 100%, like other
+# 1440p screens), read from the current mode, e.g. "U:3840x2160p-0".
+mode=$(head -n1 /sys/class/graphics/fb0/modes 2>/dev/null)
+height=${mode#*x}
+height=${height%%[!0-9]*}
+scale=1
+[ "${height:-0}" -ge 2000 ] && scale=1.5
+[ "${height:-0}" -ge 2800 ] && scale=2
+set -- --no-first-run --no-default-browser-check --force-device-scale-factor="$scale" "$@"
+
+lock=/tmp/.X0-lock
+if [ -r "$lock" ] && [ -d "/proc/$(tr -d ' ' < "$lock")" ]; then
+	DISPLAY=:0 exec chromium "$@"
+fi
+
+vt=$(cat /sys/class/tty/tty0/active)
+exec xinit /usr/local/lib/mouseplotter/x-session "$@" -- :0 "vt${vt#tty}" -nolisten tcp

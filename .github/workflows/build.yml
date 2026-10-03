@@ -1,0 +1,72 @@
+name: Release
+
+# Publishes the ISO as a release tagged with the date. Checks daily and builds
+# only when Debian has a newer Chromium than the latest release (security
+# updates arrive about weekly); "Run workflow" in the Actions tab builds
+# regardless. Releases older than 30 days are deleted.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        run: |
+          available=$(docker run --rm docker.io/library/debian:trixie sh -c \
+            'apt-get update -qq >/dev/null && apt-cache policy chromium' |
+            awk '/Candidate:/ {print $2}')
+          released=$(gh release download --pattern '*.packages' --output - 2>/dev/null |
+            awk '$1 == "chromium" {print $2}')
+          echo "Chromium in Debian: $available, in the latest release: ${released:-none}"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$available" != "$released" ]; then
+            echo build=true >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Build live image
+        run: |
+          docker build -t mouseplotter-live-builder -f Containerfile .
+          mkdir -p out
+          docker run --rm --privileged \
+            -v "$PWD:/src:ro" -v "$PWD/out:/out" -v live-work:/work \
+            mouseplotter-live-builder /src/scripts/build-in-container.sh
+
+      - name: Publish release
+        run: |
+          tag=$(date -u +%F)
+          chromium=$(awk '$1 == "chromium" {print $2}' out/*.packages)
+          # A second build on the same day replaces the first.
+          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" out/* --target "$GITHUB_SHA" \
+            --title "MousePlotter Live $tag" \
+            --notes "Debian 13 (trixie) with updates as of $tag, Chromium $chromium."
+
+      - name: Delete releases older than 30 days
+        run: |
+          cutoff=$(date -u -d '30 days ago' +%FT%TZ)
+          gh release list --limit 100 --json tagName,publishedAt \
+            --jq ".[] | select(.publishedAt < \"$cutoff\") | .tagName" |
+            xargs -r -n1 gh release delete --cleanup-tag --yes

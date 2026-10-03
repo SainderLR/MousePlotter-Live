@@ -1,0 +1,8 @@
+# Mesa's OpenGL drivers, and the LLVM and Z3 libraries they link, come in as
+# package dependencies of Xorg but are never used: with no GPU driver loaded,
+# Xorg's fbdev driver draws in software, and Chromium renders in software with
+# its own bundled renderer. Leaving them out saves about 190 MB uncompressed.
+path-exclude=/usr/lib/x86_64-linux-gnu/libLLVM*
+path-exclude=/usr/lib/x86_64-linux-gnu/libgallium-*
+path-exclude=/usr/lib/x86_64-linux-gnu/libz3.so*
+path-exclude=/usr/lib/x86_64-linux-gnu/dri/*

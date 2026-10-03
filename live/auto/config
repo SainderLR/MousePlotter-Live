@@ -1,0 +1,18 @@
+#!/bin/sh
+# live-build configuration for MousePlotter Live. The boot menu entry and its
+# kernel parameters are in config/bootloaders/grub-pc/grub.cfg.
+set -e
+
+lb config noauto \
+	--distribution trixie \
+	--archive-areas "main non-free-firmware" \
+	--debootstrap-options "--variant=minbase" \
+	--apt-recommends false \
+	--apt-indices false \
+	--firmware-chroot false \
+	--firmware-binary false \
+	--bootloaders "grub-pc,grub-efi" \
+	--uefi-secure-boot enable \
+	--iso-volume "MousePlotter Live" \
+	--image-name mouseplotter-live \
+	"${@}"

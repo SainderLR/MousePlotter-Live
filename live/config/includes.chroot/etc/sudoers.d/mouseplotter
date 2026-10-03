@@ -1,0 +1,4 @@
+# Run the MousePlotter CLI on the console itself rather than in the pseudo-
+# terminal sudo creates by default: the CLI accepts click-to-record only when
+# it can see that its text console is on screen.
+Defaults!/usr/local/bin/mouseplotter !use_pty

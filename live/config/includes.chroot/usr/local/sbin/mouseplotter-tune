@@ -1,0 +1,84 @@
+#!/bin/sh
+# MousePlotter Live CPU tuning. Every level sets the performance cpufreq
+# governor (also the boot default, see grub.cfg), stops the console cursor
+# blinking (a 200 ms redraw timer) and moves the USB host controllers'
+# interrupts to the fastest cores; the levels differ in the cpuidle states the
+# CPUs may use:
+#
+#   mouseplotter-tune c1       POLL and C1 only; applied at boot
+#   mouseplotter-tune default  the kernel's defaults
+#   mouseplotter-tune poll     POLL only, as `cpupower idle-set -D 0` does
+#   mouseplotter-tune next     the next level, in the order above
+#   mouseplotter-tune status   one-line summary
+set -u
+
+cpu=/sys/devices/system/cpu
+state=/run/mouseplotter-tune
+
+# The fastest cores (highest maximum frequency: P-cores on hybrid CPUs) other
+# than core 0, which irqaffinity=0 leaves the other interrupts to.
+fast_cores() {
+	core0=$(cat "$cpu/cpu0/topology/core_cpus_list")
+	best=-1 list=
+	for d in "$cpu"/cpu[0-9]*; do
+		[ "$(cat "$d/topology/core_cpus_list")" = "$core0" ] && continue
+		f=$(cat "$d/cpufreq/cpuinfo_max_freq" 2>/dev/null || echo 0)
+		if [ "$f" -gt "$best" ]; then
+			best=$f list=${d##*cpu}
+		elif [ "$f" -eq "$best" ]; then
+			list=$list,${d##*cpu}
+		fi
+	done
+	echo "$list"
+}
+
+level=${1:-status}
+if [ "$level" = next ]; then
+	case "$(cat "$state" 2>/dev/null)" in
+	c1) level=default ;;
+	default) level=poll ;;
+	*) level=c1 ;;
+	esac
+fi
+
+case "$level" in
+c1 | default | poll)
+	for f in "$cpu"/cpufreq/policy*/scaling_governor; do
+		[ -w "$f" ] && echo performance > "$f"
+	done
+	echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
+	# USB hubs plugged in later share these controllers' interrupts.
+	cores=$(fast_cores)
+	for irq in /sys/bus/pci/drivers/xhci_hcd/*/msi_irqs/*; do
+		[ -n "$cores" ] && [ -e "$irq" ] &&
+			echo "$cores" > "/proc/irq/${irq##*/}/smp_affinity_list" 2>/dev/null
+	done
+	# The x86 cpuidle drivers number POLL as state0 and C1 as state1.
+	for s in "$cpu"/cpu[0-9]*/cpuidle/state[0-9]*; do
+		[ -e "$s" ] || continue
+		n=${s##*state}
+		disable=1
+		case "$level" in
+		c1) [ "$n" -le 1 ] && disable=0 ;;
+		poll) [ "$n" -eq 0 ] && disable=0 ;;
+		default) [ "$(cat "$s/default_status")" = enabled ] && disable=0 ;;
+		esac
+		echo "$disable" > "$s/disable"
+	done
+	echo "$level" > "$state"
+	;;
+status)
+	idle= n=0
+	while [ -e "$cpu/cpu0/cpuidle/state$n" ]; do
+		s=$cpu/cpu0/cpuidle/state$n
+		[ "$(cat "$s/disable")" = 0 ] && idle="$idle $(cat "$s/name")"
+		n=$((n + 1))
+	done
+	gov=$(cat "$cpu"/cpufreq/policy*/scaling_governor 2>/dev/null | sort -u | xargs)
+	echo "idle states:${idle:- none (no cpuidle driver)}, governor: ${gov:-none}"
+	;;
+*)
+	echo "usage: $0 c1|default|poll|next|status" >&2
+	exit 2
+	;;
+esac

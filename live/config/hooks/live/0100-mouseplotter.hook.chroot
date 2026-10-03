@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+
+systemctl enable mouseplotter-tune.service
+
+# Git doesn't keep file modes beyond the executable bit.
+chmod 0440 /etc/sudoers.d/mouseplotter
+
+# console-setup applies its configuration at boot from a cache built when the
+# package was installed, before /etc/default/console-setup was replaced.
+setupcon --force --save-only
+
+# The network stays off until it is turned on from the menu. NetworkManager
+# starts wpa_supplicant through D-Bus activation when it needs it.
+systemctl disable NetworkManager.service NetworkManager-wait-online.service \
+	NetworkManager-dispatcher.service wpa_supplicant.service
+
+# Periodic maintenance has no use on a live system and would only add
+# background activity.
+systemctl mask apt-daily.timer apt-daily-upgrade.timer dpkg-db-backup.timer \
+	e2scrub_all.timer fstrim.timer systemd-tmpfiles-clean.timer
+
+# Packages installed by debootstrap predate the dpkg path excludes.
+find /usr/share/doc -type f ! -name copyright -delete
+find /usr/share/doc -type d -empty -delete
+rm -rf /usr/share/man/* /usr/share/info/* /usr/share/lintian/*
+find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name locale.alias -exec rm -rf {} +

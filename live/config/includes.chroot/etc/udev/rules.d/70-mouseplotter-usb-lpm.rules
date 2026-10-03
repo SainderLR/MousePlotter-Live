@@ -1,0 +1,3 @@
+# Keep USB 2 links out of the L1 link power state (USB 2 hardware LPM), which
+# they can otherwise enter between a mouse's polled transfers.
+ACTION=="add", SUBSYSTEM=="usb", TEST=="power/usb2_hardware_lpm", ATTR{power/usb2_hardware_lpm}="0"

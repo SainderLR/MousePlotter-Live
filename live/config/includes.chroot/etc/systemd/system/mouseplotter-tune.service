@@ -1,0 +1,11 @@
+[Unit]
+Description=MousePlotter CPU tuning (performance governor, POLL and C1 only)
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/mouseplotter-tune c1
+
+[Install]
+WantedBy=multi-user.target
