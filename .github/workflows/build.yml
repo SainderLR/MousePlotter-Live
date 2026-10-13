@@ -46,6 +46,11 @@ jobs:
         with:
           submodules: true
 
+      - name: Check autosave menu
+        run: |
+          bash -n live/config/includes.chroot/usr/local/bin/mouseplotter-menu
+          bash tests/menu-autosave.sh
+
       - name: Build live image
         run: |
           docker build -t mouseplotter-live-builder -f Containerfile .
@@ -56,6 +61,7 @@ jobs:
 
       - name: Publish release
         run: |
+          (cd out && sha256sum *.iso > SHA256SUMS)
           tag=$(date -u +%F)
           chromium=$(awk '$1 == "chromium" {print $2}' out/*.packages)
           # A second build on the same day replaces the first.

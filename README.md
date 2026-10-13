@@ -14,9 +14,9 @@ Based on Debian 13 (trixie), built with Debian's standard `live-build`.
 ## Using it
 
 1. Download `mouseplotter-live-amd64.hybrid.iso` from the
-   [latest release](https://github.com/XBAB-Tech/MousePlotter-Live/releases/latest),
+   [latest release](https://github.com/SainderLR/MousePlotter-Live/releases/latest),
    which is rebuilt whenever Debian updates Chromium (about weekly), and write
-   it to a USB drive with [Rufus](https://rufus.ie),
+   it to a USB drive with [Rufus](https://rufus.ie) (choose DD mode),
    [balenaEtcher](https://etcher.balena.io), or
    `dd if=mouseplotter-live-amd64.hybrid.iso of=/dev/sdX bs=4M conv=fsync status=progress`.
    This erases the drive.
@@ -32,12 +32,28 @@ Based on Debian 13 (trixie), built with Debian's standard `live-build`.
    | K | Keyboard layout |
    | S | Shell (`sudo` needs no password) |
 
-Results are saved to `~/results` in RAM and are **lost at power off**. To
-keep them, turn the network on and upload them from Chromium, or copy them to
-another drive from the shell.
+Results are saved to `~/results` in RAM. For USB backup, connect one partition
+formatted as **exFAT** and labelled **MPDATA**; it can occupy spare space on
+the boot stick. Keep that stick connected. The menu shows whether MPDATA was
+found and whether the last backup succeeded.
 
-The system is copied into RAM at boot, so the USB drive can be removed once
-the menu appears (the menu says so), leaving one less device on the USB bus.
+Use **H** or **C** inside the recorder to save an HTML report or CSV, then exit
+the recorder back to the main menu. Saved files are copied to
+`MPDATA/MousePlotter/<boot-id>/results/`. Each boot has a separate folder, so
+earlier sessions are preserved. The save partition is flushed and unmounted
+before another recording starts; no background save runs during a recording.
+The menu also backs up before **P** (power off) and **B** (reboot), and asks
+before proceeding if backup fails. Recordings that have not been saved with
+H/C cannot be backed up. Shell shutdown commands and unexpected power loss
+bypass the menu's save; return to the menu and check the backup status first.
+
+If MPDATA is absent or saving fails, results remain in RAM and are **lost at
+power off**. You can also turn the network on and upload them from Chromium,
+or copy them to another drive from the shell.
+
+The system is copied into RAM at boot. Keep the MPDATA drive connected for
+automatic saves. If using no USB backup, the boot drive can be removed once
+the system is running from RAM, leaving one less device on the USB bus.
 
 The boot menu has a single entry and starts it after 2 seconds. To change
 the kernel parameters for one boot, press `e` there: for example remove

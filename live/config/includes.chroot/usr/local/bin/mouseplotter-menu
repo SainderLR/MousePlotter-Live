@@ -3,8 +3,21 @@
 set -u
 
 results=$HOME/results
-mkdir -p "$results"
+mkdir -p "$results" || exit 1
 cd "$results" || exit 1
+
+# A separate directory for each boot prevents old recordings being overwritten.
+session_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+if [[ ! $session_id =~ ^[a-zA-Z0-9-]+$ ]]; then
+	session_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+fi
+save_path="MousePlotter/$session_id/results"
+save_status="not saved yet; exit the recorder to save"
+save_mount=/mnt/mpdata
+save_mounted=0
+data_device=
+data_type=
+data_error=
 
 pause() {
 	read -rsn1 -p "Press any key to return to the menu."
@@ -60,6 +73,19 @@ network_off() {
 
 record() {
 	clear
+	# A failed unmount must be resolved before starting another recording.
+	if ! release_save_mount; then
+		echo "Cannot record while the USB save partition is still mounted."
+		pause
+		return
+	fi
+	if findmnt -rn --mountpoint "$save_mount" >/dev/null ||
+		{ find_data_partition && findmnt -rn --source "$data_device" >/dev/null; }; then
+		echo "MPDATA is mounted. Unmount it before recording to keep USB storage idle."
+		echo "Use S (Shell) to unmount MPDATA, then return here."
+		pause
+		return
+	fi
 	if network_up; then
 		echo "Note: the network is on. Wi-Fi and Ethernet interrupts can show up as"
 		echo "timing jitter; turn the network off from the menu (O) for the cleanest data."
@@ -99,10 +125,111 @@ keyboard() {
 # mount point) and releases the USB drive.
 boot_drive_status() {
 	if [ "$(findmnt -no FSTYPE /run/live/medium)" = tmpfs ]; then
-		echo "not in use, can be removed"
+		echo "not in use by system; keep plugged in for USB saves"
 	else
 		echo "in use, keep it plugged in"
 	fi
+}
+
+# Read the device list only at the menu or after the recorder has exited.
+# Never pick one of several partitions that share the label.
+find_data_partition() {
+	local devices device label type matches=0
+	data_device= data_type= data_error=
+	if ! devices=$(lsblk -prno NAME,LABEL,FSTYPE 2>/dev/null); then
+		data_error="cannot check MPDATA partitions"
+		return 1
+	fi
+	while read -r device label type; do
+		[ "$label" = MPDATA ] || continue
+		data_device=$device
+		data_type=$type
+		matches=$((matches + 1))
+	done <<< "$devices"
+	case "$matches" in
+	0) data_error="MPDATA not found" ;;
+	1) return 0 ;;
+	*) data_error="multiple MPDATA partitions found; keep only one connected" ;;
+	esac
+	return 1
+}
+
+release_save_mount() {
+	[ "$save_mounted" = 1 ] || return 0
+	if ! sudo umount "$save_mount"; then
+		save_status="SAVE FAILED: cannot unmount MPDATA"
+		echo "$save_status"
+		return 1
+	fi
+	save_mounted=0
+}
+
+results_have_data() {
+	[ -n "$(find "$results" -mindepth 1 -print -quit)" ]
+}
+
+save_failed() {
+	save_status="SAVE FAILED: $1; results remain in RAM"
+	echo "$save_status"
+	return 1
+}
+
+# Copy synchronously after exiting the recorder or before shutdown. The save
+# partition is flushed and unmounted before another recording can start.
+save_results() {
+	local failed=0
+	release_save_mount || return 1
+	results_have_data || return 0
+	find_data_partition || { save_failed "$data_error"; return 1; }
+	if [ "$data_type" != exfat ]; then
+		save_failed "MPDATA must be formatted as exFAT"
+		return 1
+	fi
+	# Do not reuse or unmount a partition mounted by another program.
+	if findmnt -rn --mountpoint "$save_mount" >/dev/null ||
+		findmnt -rn --source "$data_device" >/dev/null; then
+		save_failed "MPDATA or $save_mount is already mounted; unmount it first"
+		return 1
+	fi
+	if ! sudo mkdir -p "$save_mount" ||
+		! sudo mount -t exfat -o "uid=$(id -u),gid=$(id -g),noatime" "$data_device" "$save_mount"; then
+		save_failed "cannot mount MPDATA"
+		return 1
+	fi
+	save_mounted=1
+	if ! mkdir -p "$save_mount/$save_path" ||
+		! rsync -rtc --modify-window=1 "$results/" "$save_mount/$save_path/"; then
+		save_failed "copy to MPDATA failed (check available space)"
+		failed=1
+	fi
+	if ! sync -f "$save_mount"; then
+		save_failed "flushing MPDATA failed"
+		failed=1
+	fi
+	release_save_mount || failed=1
+	[ "$failed" = 0 ] || return 1
+	save_status="saved to MPDATA/$save_path"
+	echo "$save_status"
+}
+
+usb_save_status() {
+	if find_data_partition; then
+		echo "MPDATA found, keep plugged in; $save_status"
+	else
+		echo "$data_error; $save_status"
+	fi
+}
+
+shutdown() {
+	local action=$1 answer
+	clear
+	if ! save_results; then
+		echo
+		echo "USB backup failed. Powering off or rebooting loses results kept in RAM."
+		read -rp "Type YES to $action anyway, or press Enter to return: " answer
+		[ "$answer" = YES ] || return 0
+	fi
+	sudo systemctl "$action"
 }
 
 shell() {
@@ -110,6 +237,8 @@ shell() {
 	echo "Type 'exit' to return to the menu. sudo needs no password."
 	bash
 }
+
+trap 'release_save_mount || true' EXIT
 
 while true; do
 	clear
@@ -120,8 +249,9 @@ while true; do
 
   CPU       $(/usr/local/sbin/mouseplotter-tune status)
   Network   $(network_status)
-  Results   ~/results, $count file(s), kept in RAM: lost at power off
+  Results   ~/results, $count file(s) in RAM; USB backup status below
   USB drive $(boot_drive_status)
+  USB save  $(usb_save_status)
 
   R  Record mouse data           H  Web browser, results
   N  Network on / Wi-Fi setup    O  Network off
@@ -131,14 +261,14 @@ while true; do
 EOF
 	read -rsn1 key
 	case "$key" in
-	r | R) record ;;
+	r | R) record; save_results || pause ;;
 	h | H) xdg-open "$results/" ;;
 	n | N) network_on ;;
 	o | O) network_off ;;
 	t | T) sudo /usr/local/sbin/mouseplotter-tune next ;;
 	k | K) keyboard ;;
 	s | S) shell ;;
-	p | P) sudo systemctl poweroff ;;
-	b | B) sudo systemctl reboot ;;
+	p | P) shutdown poweroff ;;
+	b | B) shutdown reboot ;;
 	esac
 done
